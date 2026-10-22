@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Country Silhouette Shape Identification Quiz</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 min-h-screen font-sans text-white">
+<div class="max-w-xl mx-auto px-4 py-8">
+  <h1 class="text-3xl font-bold text-center text-teal-400 mb-1">Country Silhouette Quiz</h1>
+  <p class="text-center text-slate-400 mb-6">Identify the country from its shape</p>
+
+  <!-- Difficulty + Stats -->
+  <div class="flex flex-wrap gap-3 justify-between items-center mb-4">
+    <div>
+      <label for="difficulty" class="text-sm text-slate-400 mr-1">Difficulty:</label>
+      <select id="difficulty" class="bg-slate-800 border border-slate-600 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" aria-label="Select difficulty">
+        <option value="easy">Easy (4 options)</option>
+        <option value="medium" selected>Medium (4, less obvious)</option>
+        <option value="hard">Hard (6 options)</option>
+      </select>
+    </div>
+    <div class="flex gap-4 text-sm text-slate-300">
+      <span>Score: <strong id="score" class="text-white">0</strong></span>
+      <span>Streak: <strong id="streak" class="text-yellow-300">0</strong></span>
+    </div>
+  </div>
+
+  <!-- Silhouette card -->
+  <div class="bg-slate-800 rounded-2xl p-6 mb-5 flex items-center justify-center min-h-[260px]">
+    <svg id="silhouette-svg" viewBox="0 0 300 240" width="300" height="240" class="mx-auto" aria-label="Country silhouette" role="img"></svg>
+  </div>
+
+  <!-- Question -->
+  <p class="text-center text-slate-300 mb-4" id="question-label">Which country is this?</p>
+
+  <!-- Options -->
+  <div id="options" class="grid grid-cols-2 gap-3 mb-4"></div>
+
+  <!-- Feedback -->
+  <div class="text-center h-8 font-semibold text-base" id="feedback" aria-live="assertive"></div>
+
+  <!-- Counter -->
+  <div class="text-center text-sm text-slate-500 mt-1">Questions: <strong id="total" class="text-slate-300">0</strong></div>
+</div>
+
+<script>
+function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+// Simplified SVG paths for 22 countries, scaled to ~300×240 viewBox
+// These are stylized/simplified outlines for recognition purposes
+const COUNTRIES = [
+  {
+    name: 'Italy',
+    path: 'M150 10 L155 20 L165 25 L168 35 L162 50 L168 60 L175 70 L180 85 L185 100 L188 115 L182 125 L175 135 L170 150 L165 165 L158 180 L150 195 L145 200 L138 195 L132 185 L140 175 L148 165 L150 155 L145 140 L140 125 L132 115 L128 100 L125 85 L128 70 L132 55 L135 40 L140 28 L145 15 Z',
+    hint: 'Boot-shaped peninsula in southern Europe'
+  },
+  {
+    name: 'Japan',
+    path: 'M175 20 L180 30 L185 45 L188 60 L182 75 L175 70 L168 80 L165 90 L170 100 L165 112 L158 105 L152 115 L148 130 L145 145 L148 158 L142 165 L135 160 L130 148 L132 135 L138 120 L142 108 L138 95 L132 85 L135 72 L128 62 L125 50 L128 38 L135 28 L145 22 L158 18 Z M110 55 L118 62 L122 75 L118 85 L110 80 L105 68 L108 58 Z M90 90 L100 95 L105 108 L100 118 L90 115 L85 102 L88 93 Z',
+    hint: 'Island nation with distinctive arched shape'
+  },
+  {
+    name: 'Australia',
+    path: 'M60 60 L80 55 L100 52 L120 50 L145 50 L165 52 L182 58 L195 65 L205 75 L208 88 L210 105 L205 122 L198 138 L188 150 L178 162 L165 170 L155 175 L145 180 L135 185 L125 190 L118 182 L125 172 L128 162 L120 155 L112 162 L105 155 L100 145 L95 132 L88 118 L80 105 L70 92 L60 78 Z',
+    hint: 'Continent-island in the southern Pacific'
+  },
+  {
+    name: 'Brazil',
+    path: 'M120 20 L138 22 L155 28 L165 38 L170 52 L168 68 L175 80 L178 95 L172 110 L168 125 L162 140 L158 155 L150 170 L140 182 L128 190 L118 185 L108 175 L100 162 L95 148 L92 132 L98 120 L92 108 L85 95 L80 80 L82 65 L88 52 L95 40 L105 30 Z',
+    hint: 'Largest country in South America'
+  },
+  {
+    name: 'France',
+    path: 'M100 40 L118 35 L138 38 L155 45 L165 60 L170 78 L168 95 L162 108 L152 118 L138 125 L122 128 L108 122 L95 112 L88 98 L85 82 L88 65 L95 52 Z',
+    hint: 'Roughly hexagonal Western European nation'
+  },
+  {
+    name: 'USA',
+    path: 'M50 55 L80 52 L115 50 L150 50 L185 52 L210 55 L225 60 L228 72 L225 82 L220 88 L210 85 L200 90 L195 100 L185 105 L175 102 L168 110 L158 115 L148 112 L138 118 L128 122 L118 118 L108 112 L98 108 L88 112 L78 110 L68 102 L58 95 L48 85 L45 72 L48 62 Z M30 75 L42 72 L48 82 L45 92 L35 95 L28 88 L28 78 Z M235 65 L248 62 L255 72 L252 85 L242 88 L235 82 L232 72 Z',
+    hint: 'Contiguous 48 states + Alaska (left) + Hawaii (right)'
+  },
+  {
+    name: 'India',
+    path: 'M130 20 L148 22 L162 30 L170 42 L175 58 L178 75 L175 90 L170 105 L165 120 L158 135 L150 150 L142 165 L135 175 L128 180 L122 175 L118 162 L115 148 L118 132 L122 118 L118 102 L112 88 L108 72 L110 55 L115 40 L122 28 Z',
+    hint: 'South Asian subcontinent with triangular southern tip'
+  },
+  {
+    name: 'China',
+    path: 'M80 45 L105 40 L130 38 L155 40 L178 45 L195 55 L205 68 L208 82 L205 95 L198 108 L188 118 L178 125 L165 130 L150 135 L132 138 L115 135 L100 128 L88 118 L78 105 L70 90 L68 75 L72 60 Z',
+    hint: 'Roughly rectangular East Asian giant'
+  },
+  {
+    name: 'Canada',
+    path: 'M45 30 L75 25 L110 22 L145 22 L180 25 L210 30 L232 38 L242 50 L245 65 L240 78 L228 85 L218 80 L208 88 L198 82 L188 90 L175 85 L165 92 L152 88 L138 92 L122 88 L108 92 L92 88 L78 80 L65 72 L55 62 L48 50 Z',
+    hint: 'Large northern North American country'
+  },
+  {
+    name: 'Argentina',
+    path: 'M118 20 L132 22 L142 32 L148 45 L145 60 L148 75 L145 90 L142 108 L138 125 L135 142 L130 158 L125 175 L118 190 L112 198 L105 195 L108 180 L112 165 L115 148 L112 132 L108 118 L105 102 L108 85 L112 68 L108 52 L108 38 L112 28 Z',
+    hint: 'Elongated South American country tapering to the south'
+  },
+  {
+    name: 'Norway',
+    path: 'M138 15 L148 20 L155 30 L158 42 L162 55 L165 70 L168 85 L165 100 L158 110 L150 118 L142 112 L138 100 L132 90 L128 78 L125 65 L128 50 L132 38 L135 25 Z',
+    hint: 'Elongated Scandinavian country on Europe\'s west coast'
+  },
+  {
+    name: 'Spain',
+    path: 'M88 50 L108 45 L130 42 L152 45 L168 55 L175 68 L172 82 L165 92 L152 100 L135 105 L118 102 L102 95 L90 82 L82 68 L85 55 Z',
+    hint: 'Iberian Peninsula in southwestern Europe'
+  },
+  {
+    name: 'UK',
+    path: 'M130 18 L138 25 L145 35 L148 50 L145 62 L138 70 L130 65 L122 72 L118 85 L115 98 L118 108 L112 115 L105 108 L100 95 L102 80 L108 68 L115 58 L118 45 L122 30 Z M88 55 L98 50 L108 58 L112 70 L108 80 L98 82 L88 75 L82 62 Z',
+    hint: 'Island nation — Great Britain + part of Ireland'
+  },
+  {
+    name: 'Mexico',
+    path: 'M55 45 L80 40 L108 38 L132 40 L148 48 L158 60 L155 72 L148 80 L142 88 L138 100 L132 110 L125 118 L118 112 L112 100 L105 90 L95 80 L82 72 L68 65 L55 58 Z',
+    hint: 'Funnel-shaped country in Central North America'
+  },
+  {
+    name: 'South Africa',
+    path: 'M95 40 L118 35 L142 35 L165 40 L182 52 L192 68 L195 85 L190 102 L182 118 L170 132 L155 145 L142 155 L130 160 L118 155 L108 145 L98 130 L90 115 L85 98 L82 80 L85 62 Z',
+    hint: 'Southernmost African nation with flat top'
+  },
+  {
+    name: 'Egypt',
+    path: 'M90 45 L115 42 L142 42 L168 45 L185 52 L188 68 L185 85 L182 100 L178 115 L172 128 L162 138 L148 142 L132 142 L118 138 L105 128 L95 115 L88 100 L85 85 L82 68 L85 52 Z',
+    hint: 'Near-rectangular North African nation with Sinai Peninsula'
+  },
+  {
+    name: 'Chile',
+    path: 'M125 15 L135 20 L140 32 L142 48 L140 65 L138 82 L135 100 L132 118 L130 138 L128 158 L125 178 L122 195 L118 205 L112 200 L112 185 L115 168 L118 150 L120 130 L122 110 L122 90 L120 70 L118 52 L118 35 L122 22 Z',
+    hint: 'World\'s longest, narrowest country on South America\'s west coast'
+  },
+  {
+    name: 'New Zealand',
+    path: 'M155 38 L162 48 L165 62 L162 78 L155 90 L148 80 L142 68 L142 52 L148 42 Z M140 108 L148 115 L155 128 L158 145 L155 162 L148 175 L138 185 L128 188 L118 182 L112 168 L112 152 L118 138 L128 125 L138 115 Z',
+    hint: 'Two-island nation in the South Pacific'
+  },
+  {
+    name: 'Turkey',
+    path: 'M75 70 L100 65 L128 62 L158 62 L182 65 L200 72 L215 82 L218 95 L212 108 L198 115 L178 118 L158 120 L135 118 L112 115 L90 110 L72 100 L65 88 Z',
+    hint: 'Roughly rectangular country bridging Europe and Asia'
+  },
+  {
+    name: 'Sweden',
+    path: 'M132 15 L142 22 L150 32 L155 48 L158 65 L160 82 L158 100 L155 118 L150 135 L142 148 L132 155 L122 148 L118 132 L120 115 L122 98 L125 80 L128 62 L130 45 L130 28 Z',
+    hint: 'Elongated Scandinavian country'
+  },
+  {
+    name: 'Germany',
+    path: 'M110 40 L128 35 L148 35 L165 42 L175 55 L178 70 L175 82 L168 92 L158 100 L145 108 L130 112 L115 108 L102 98 L92 85 L88 70 L92 55 Z',
+    hint: 'Central European nation with irregular borders'
+  },
+  {
+    name: 'Indonesia',
+    path: 'M40 80 L65 75 L88 72 L108 70 L125 72 L138 70 L155 68 L172 70 L188 72 L205 75 L220 80 L232 88 L235 100 L228 110 L215 115 L200 112 L185 115 L170 112 L155 115 L138 112 L120 115 L105 112 L88 108 L72 105 L55 100 L42 92 Z',
+    hint: 'Archipelago nation stretching across Southeast Asia'
+  },
+];
+
+// Easy uses famous/very distinct shapes, Medium uses all, Hard adds more options
+const EASY_COUNTRIES = ['Italy','Australia','India','USA','Chile','New Zealand','Japan','Argentina'];
+
+let mode_diff = 'medium';
+let score = 0, streak = 0, total = 0;
+let answered = false;
+let current = null;
+
+function shuffle(arr) {
+  const a = [...arr]; for (let i = a.length-1; i>0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a;
+}
+
+function getPool() {
+  if (mode_diff === 'easy') return COUNTRIES.filter(c => EASY_COUNTRIES.includes(c.name));
+  return COUNTRIES;
+}
+
+function nextQuestion() {
+  answered = false;
+  document.getElementById('feedback').textContent = '';
+
+  const pool = shuffle(getPool());
+  current = pool[0];
+  const numOptions = mode_diff === 'hard' ? 6 : 4;
+  const wrongPool = pool.filter(c => c.name !== current.name);
+  const wrong = wrongPool.slice(0, numOptions - 1);
+  const options = shuffle([current, ...wrong]);
+
+  // Draw silhouette
+  const svg = document.getElementById('silhouette-svg');
+  svg.innerHTML = '<path d="' + escapeHtml(current.path) + '" fill="#14b8a6" stroke="#0d9488" stroke-width="1.5"/>';
+  svg.setAttribute('aria-label', 'Country silhouette — identify this country');
+
+  const container = document.getElementById('options');
+  container.className = numOptions === 6 ? 'grid grid-cols-2 gap-3 mb-4' : 'grid grid-cols-2 gap-3 mb-4';
+  container.innerHTML = '';
+  for (const opt of options) {
+    const btn = document.createElement('button');
+    btn.className = 'py-3 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 font-semibold text-white border-2 border-transparent transition text-sm';
+    btn.textContent = opt.name;
+    btn.setAttribute('aria-label', 'Answer: ' + opt.name);
+    btn.addEventListener('click', () => {
+      if (answered) return;
+      answered = true;
+      total++;
+      const correct = opt.name === current.name;
+      if (correct) {
+        btn.classList.add('!bg-teal-500', '!border-teal-400');
+        score++; streak++;
+        document.getElementById('feedback').textContent = '✓ Correct! ' + current.hint;
+        document.getElementById('feedback').className = 'text-center h-8 font-semibold text-base text-teal-400';
+      } else {
+        btn.classList.add('!bg-red-600/70', '!border-red-500');
+        streak = 0;
+        document.getElementById('feedback').textContent = '✗ It was ' + current.name + '. ' + current.hint;
+        document.getElementById('feedback').className = 'text-center h-8 font-semibold text-base text-red-400';
+        container.querySelectorAll('button').forEach(b => {
+          if (b.textContent.trim() === current.name) b.classList.add('!bg-teal-500/70');
+        });
+      }
+      document.getElementById('score').textContent = String(score);
+      document.getElementById('streak').textContent = String(streak);
+      document.getElementById('total').textContent = String(total);
+      setTimeout(nextQuestion, 1800);
+    });
+    container.appendChild(btn);
+  }
+}
+
+document.getElementById('difficulty').addEventListener('change', function() {
+  mode_diff = this.value;
+  nextQuestion();
+});
+
+nextQuestion();
+</script>
+</body>
+</html>
